@@ -1,0 +1,21 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./dev.db"
+}
+
+model Clothing {
+  id        String   @id @default(cuid())
+  name      String
+  brand     String
+  price     Float?
+  size      String
+  color     String
+  tags      String   // We'll store tags as JSON string
+  image     String?
+  liked     Boolean  @default(false)
+  createdAt DateTime @default(now())
+} 
