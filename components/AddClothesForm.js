@@ -1,24 +1,60 @@
-import { Formik, Form, Field, ErrorMessage } from 'formik';
+import { Formik, Form, Field } from 'formik';
 import * as Yup from 'yup';
-import { X, Image as ImageIcon } from 'lucide-react';
+import { X, Upload, Plus } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import CreatableSelect from 'react-select/creatable';
+import { HexColorPicker } from 'react-colorful';
 
 const validationSchema = Yup.object({
-  name: Yup.string().required('Item name is required'),
+  name: Yup.string().required('Name is required'),
+  category: Yup.string().required('Category is required'),
   brand: Yup.string().required('Brand is required'),
-  price: Yup.number().min(0, 'Price must be positive').nullable(),
+  sizeType: Yup.string().required('Size type is required'),
   size: Yup.string().required('Size is required'),
+  price: Yup.number().min(0, 'Price must be positive').required('Price is required'),
   color: Yup.string().required('Color is required'),
-  tags: Yup.array().min(1, 'At least one tag is required'),
-  image: Yup.string().url('Must be a valid URL').nullable(),
+  tags: Yup.array().of(Yup.string()),
+  image: Yup.string().when('uploadType', {
+    is: 'link',
+    then: Yup.string().url('Must be a valid URL').required('Image URL is required'),
+    otherwise: Yup.string()
+  }),
 });
 
-export default function AddClothesForm({ isOpen, onClose, onSubmit, isSliding, editItem = null }) {
-  const [imagePreview, setImagePreview] = useState('');
-  const [imageError, setImageError] = useState(false);
-  const isEditing = editItem !== null;
+const sizeOptions = {
+  clothing: ['XS', 'S', 'M', 'L', 'XL', 'XXL'],
+  shoes: Array.from({ length: 15 }, (_, i) => (i + 6).toString()), // US 6-20
+  accessories: Array.from({ length: 20 }, (_, i) => (i + 1).toString()), // 1-20
+};
 
-  // Prevent body scroll when modal is open
+export default function AddClothesForm({ isOpen, onClose, onSubmit }) {
+  const [uploadType, setUploadType] = useState('upload');
+  const [selectedTags, setSelectedTags] = useState([]);
+  const [imagePreview, setImagePreview] = useState('');
+  const [customColor, setCustomColor] = useState('');
+  const [showColorPicker, setShowColorPicker] = useState(false);
+  const [pickerColor, setPickerColor] = useState("#ffffff");
+  const [availableColors, setAvailableColors] = useState([
+    'white', 'gray', 'black', 'red', 'blue', 'green', 'yellow', 'pink'
+  ]);
+  
+  // Convert arrays to react-select format
+  const [brandOptions, setBrandOptions] = useState([
+    { value: 'Nike', label: 'Nike' },
+    { value: 'Adidas', label: 'Adidas' },
+    { value: 'H&M', label: 'H&M' },
+    { value: 'Zara', label: 'Zara' },
+    { value: 'Gymshark', label: 'Gymshark' }
+  ]);
+
+  const [tagOptions, setTagOptions] = useState([
+    { value: 'Spring', label: 'Spring' },
+    { value: 'Smart', label: 'Smart' },
+    { value: 'Modern', label: 'Modern' },
+    { value: 'Casual', label: 'Casual' },
+    { value: 'Formal', label: 'Formal' }
+  ]);
+
   useEffect(() => {
     if (isOpen) {
       document.body.style.overflow = 'hidden';
@@ -30,331 +66,344 @@ export default function AddClothesForm({ isOpen, onClose, onSubmit, isSliding, e
     };
   }, [isOpen]);
 
-  // Set image preview when editing
-  useEffect(() => {
-    if (editItem?.image) {
-      setImagePreview(editItem.image);
-    } else {
-      setImagePreview('');
-    }
-    setImageError(false);
-  }, [editItem]);
-
-  const handleImagePreview = async (url) => {
-    if (!url) {
-      setImagePreview('');
-      setImageError(false);
-      return;
-    }
-
-    try {
-      // Test if the image loads successfully
-      const img = new Image();
-      img.onload = () => {
-        setImagePreview(url);
-        setImageError(false);
+  const handleFileUpload = (event, setFieldValue) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+        setFieldValue('image', reader.result);
       };
-      img.onerror = () => {
-        setImagePreview('');
-        setImageError(true);
-      };
-      img.src = url;
-    } catch (error) {
-      setImagePreview('');
-      setImageError(true);
+      reader.readAsDataURL(file);
     }
   };
 
-  const handleSubmit = async (values, { setSubmitting, resetForm }) => {
-    try {
-      console.log(`👔 ${isEditing ? 'Updating' : 'Submitting'} clothing item:`, values);
-      
-      // Format the data
-      const formData = {
-        ...values,
-        price: values.price ? parseFloat(values.price) : null,
-        image: values.image || null,
-        tags: values.tags || []
-      };
+  const handleImageUrl = (url, setFieldValue) => {
+    setImagePreview(url);
+    setFieldValue('image', url);
+  };
 
-      let response;
-      if (isEditing) {
-        // Update existing item
-        response = await fetch(`/api/clothes/${editItem.id}`, {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData),
-        });
-      } else {
-        // Create new item
-        response = await fetch('/api/clothes', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(formData),
-        });
-      }
-
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || `Failed to ${isEditing ? 'update' : 'add'} clothing item`);
-      }
-
-      const newItem = await response.json();
-      console.log(`✅ Successfully ${isEditing ? 'updated' : 'added'}:`, newItem);
-      
-      onSubmit(newItem, isEditing);
-      resetForm();
-      setImagePreview('');
-      onClose();
-    } catch (error) {
-      console.error(`❌ Error ${isEditing ? 'updating' : 'adding'} clothing:`, error);
-      alert(error.message || `Failed to ${isEditing ? 'update' : 'add'} clothing item. Please try again.`);
-    } finally {
-      setSubmitting(false);
+  const handleAddCustomColor = () => {
+    if (pickerColor && !availableColors.includes(pickerColor)) {
+      setAvailableColors([...availableColors, pickerColor]);
+      setShowColorPicker(false);
+      setPickerColor("#ffffff");
     }
+  };
+
+  const customStyles = {
+    control: (base) => ({
+      ...base,
+      borderRadius: '0.5rem',
+      borderColor: '#E5E7EB',
+      minHeight: '42px',
+      '&:hover': {
+        borderColor: '#E5E7EB'
+      }
+    }),
+    option: (base, state) => ({
+      ...base,
+      backgroundColor: state.isSelected ? '#10B981' : state.isFocused ? '#F3F4F6' : 'white',
+      '&:active': {
+        backgroundColor: '#10B981'
+      }
+    }),
+    multiValue: (base) => ({
+      ...base,
+      backgroundColor: '#F3F4F6',
+      borderRadius: '9999px',
+      padding: '2px'
+    }),
+    multiValueLabel: (base) => ({
+      ...base,
+      fontSize: '0.875rem'
+    }),
+    multiValueRemove: (base) => ({
+      ...base,
+      ':hover': {
+        backgroundColor: '#E5E7EB',
+        color: '#4B5563'
+      },
+      borderRadius: '9999px'
+    })
+  };
+
+  const initialValues = {
+    name: '',
+    category: '',
+    brand: '',
+    sizeType: '',
+    size: '',
+    price: 50,
+    color: '',
+    tags: [],
+    image: '',
+    uploadType: uploadType,
   };
 
   if (!isOpen) return null;
 
-  const initialValues = editItem ? {
-    name: editItem.name || '',
-    brand: editItem.brand || '',
-    price: editItem.price || '',
-    size: editItem.size || '',
-    color: editItem.color || '',
-    tags: editItem.tags || [],
-    image: editItem.image || '',
-  } : {
-    name: '',
-    brand: '',
-    price: '',
-    size: '',
-    color: '',
-    tags: [],
-    image: '',
-  };
-
-  const tagOptions = ['Modern', 'Spring', 'Fall', 'Summer', 'Winter', 'Casual', 'Formal'];
-  const sizeOptions = ['XS', 'S', 'M', 'L', 'XL', 'XXL'];
-  const colorOptions = ['white', 'gray', 'black', 'red', 'blue', 'green', 'yellow', 'pink'];
-
   return (
-    <div className={`fixed inset-0 z-50 overflow-hidden ${isOpen ? 'pointer-events-auto' : 'pointer-events-none'}`}>
-      {/* Backdrop */}
-      <div 
-        className={`absolute inset-0 bg-black transition-opacity duration-300 ${
-          isSliding ? 'bg-opacity-50' : 'bg-opacity-0'
-        }`}
-        onClick={onClose}
-      />
-      
-      {/* Slide-in panel */}
-      <div 
-        className={`absolute inset-y-0 right-0 max-w-md w-full bg-white shadow-xl transform transition-transform duration-300 ease-in-out ${
-          isSliding ? 'translate-x-0' : 'translate-x-full'
-        }`}
-      >
-        <div className="h-full flex flex-col overflow-y-auto">
-          <div className="flex justify-between items-center p-6 border-b">
-            <h2 className="text-xl font-semibold">
-              {isEditing ? 'Edit Clothing Item' : 'Add Clothes'}
-            </h2>
-            <button
-              onClick={onClose}
-              className="p-2 hover:bg-gray-100 rounded-full transition-colors"
-            >
-              <X className="w-5 h-5 text-gray-500" />
+    <div className="fixed inset-0 z-50 overflow-hidden bg-black bg-opacity-50">
+      <div className="absolute right-0 top-0 h-full w-[480px] bg-white shadow-xl">
+        <div className="flex h-full flex-col">
+          <div className="flex items-center justify-between border-b p-6">
+            <h2 className="text-2xl font-semibold">Add Clothes</h2>
+            <button onClick={onClose} className="rounded-full p-2 hover:bg-gray-100">
+              <X className="h-5 w-5" />
             </button>
           </div>
 
-          <div className="flex-1 p-6">
-            <p className="text-gray-600 mb-6">
-              {isEditing ? 'Update the details for this item' : 'Fill in the necessary items'}
-            </p>
-            
+          <div className="flex-1 overflow-y-auto p-6">
+            <p className="mb-6 text-gray-600">Fill in the necessary items</p>
+
+            {/* Upload Type Tabs */}
+            <div className="mb-6 grid grid-cols-2 gap-2 rounded-lg border p-1">
+              <button
+                type="button"
+                className={`rounded-md py-2 text-center ${
+                  uploadType === 'upload' ? 'bg-gray-100 font-medium' : ''
+                }`}
+                onClick={() => setUploadType('upload')}
+              >
+                Upload
+              </button>
+              <button
+                type="button"
+                className={`rounded-md py-2 text-center ${
+                  uploadType === 'link' ? 'bg-gray-100 font-medium' : ''
+                }`}
+                onClick={() => setUploadType('link')}
+              >
+                Embed Link
+              </button>
+            </div>
+
             <Formik
-              key={editItem?.id || 'new'} // Force re-render when editItem changes
               initialValues={initialValues}
               validationSchema={validationSchema}
-              onSubmit={handleSubmit}
-              enableReinitialize={true}
+              onSubmit={onSubmit}
             >
-              {({ values, setFieldValue, isSubmitting }) => (
+              {({ setFieldValue, values }) => (
                 <Form className="space-y-6">
-                  {/* Image Preview */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Image URL
-                    </label>
-                    <div className="space-y-2">
+                  {/* Image Upload/URL Field */}
+                  {uploadType === 'upload' ? (
+                    <div>
+                      <label className="mb-1 block text-sm">Image</label>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileUpload(e, setFieldValue)}
+                        className="hidden"
+                        id="image-upload"
+                      />
+                      <label
+                        htmlFor="image-upload"
+                        className="flex w-full cursor-pointer items-center justify-center rounded-lg border border-dashed p-4 text-center hover:bg-gray-50"
+                      >
+                        <div className="space-y-1">
+                          <Upload className="mx-auto h-8 w-8 text-gray-400" />
+                          <span className="block text-sm font-medium text-green-600">Upload File</span>
+                        </div>
+                      </label>
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="mb-1 block text-sm">Image URL</label>
                       <Field
                         name="image"
                         type="url"
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
-                        placeholder="https://example.com/image.jpg"
-                        onChange={(e) => {
-                          setFieldValue('image', e.target.value);
-                          handleImagePreview(e.target.value);
-                        }}
+                        placeholder="Insert Image Url"
+                        className="w-full rounded-lg border px-4 py-2"
+                        onChange={(e) => handleImageUrl(e.target.value, setFieldValue)}
                       />
-                      {imageError && (
-                        <p className="text-red-500 text-sm">Invalid image URL</p>
-                      )}
-                      <div className="relative w-full aspect-square bg-gray-100 rounded-lg overflow-hidden">
-                        {imagePreview ? (
-                          <img
-                            src={imagePreview}
-                            alt="Preview"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="absolute inset-0 flex items-center justify-center text-gray-400">
-                            <ImageIcon className="w-12 h-12" />
-                          </div>
-                        )}
-                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Name Field */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Name
-                    </label>
+                    <label htmlFor="name" className="mb-1 block text-sm">Name</label>
                     <Field
+                      id="name"
                       name="name"
                       type="text"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
-                      placeholder="e.g., Blue Denim Jacket"
+                      placeholder="Type Name"
+                      className="w-full rounded-lg border px-4 py-2"
                     />
-                    <ErrorMessage name="name" component="div" className="text-red-500 text-sm mt-1" />
                   </div>
 
-                  {/* Brand Field */}
+                  {/* Category Field */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Brand
-                    </label>
+                    <label htmlFor="category" className="mb-1 block text-sm">Category</label>
                     <Field
+                      id="category"
                       as="select"
-                      name="brand"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                      name="category"
+                      className="w-full rounded-lg border px-4 py-2"
                     >
-                      <option value="">Select Brand</option>
-                      {['Nike', 'Adidas', 'Zara', 'H&M', 'Uniqlo', 'Gap'].map(brand => (
-                        <option key={brand} value={brand}>{brand}</option>
-                      ))}
+                      <option value="">Choose Category</option>
+                      <option value="tops">Tops</option>
+                      <option value="bottoms">Bottoms</option>
+                      <option value="shoes">Shoes</option>
+                      <option value="accessories">Accessories</option>
                     </Field>
-                    <ErrorMessage name="brand" component="div" className="text-red-500 text-sm mt-1" />
                   </div>
 
-                  {/* Size Field */}
+                  {/* Brand Field with Creatable Select */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Size
-                    </label>
+                    <label htmlFor="brand" className="mb-1 block text-sm">Brand</label>
+                    <CreatableSelect
+                      id="brand"
+                      name="brand"
+                      options={brandOptions}
+                      onChange={(newValue) => {
+                        setFieldValue('brand', newValue.value);
+                        if (!brandOptions.find(opt => opt.value === newValue.value)) {
+                          setBrandOptions([...brandOptions, newValue]);
+                        }
+                      }}
+                      styles={customStyles}
+                      placeholder="Select or create brand"
+                      formatCreateLabel={(inputValue) => `Create "${inputValue}"`}
+                    />
+                  </div>
+
+                  {/* Size Type Field */}
+                  <div>
+                    <label htmlFor="sizeType" className="mb-1 block text-sm">Size Type</label>
                     <Field
+                      id="sizeType"
+                      as="select"
+                      name="sizeType"
+                      className="w-full rounded-lg border px-4 py-2"
+                      onChange={(e) => {
+                        setFieldValue('sizeType', e.target.value);
+                        setFieldValue('size', ''); // Reset size when type changes
+                      }}
+                    >
+                      <option value="">Select Size Type</option>
+                      <option value="clothing">Clothing (XS-XXL)</option>
+                      <option value="shoes">Shoes (US)</option>
+                      <option value="accessories">Accessories</option>
+                    </Field>
+                  </div>
+
+                  {/* Dynamic Size Field */}
+                  <div>
+                    <label htmlFor="size" className="mb-1 block text-sm">Size</label>
+                    <Field
+                      id="size"
                       as="select"
                       name="size"
-                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
+                      className="w-full rounded-lg border px-4 py-2"
+                      disabled={!values.sizeType}
                     >
                       <option value="">Select Size</option>
-                      {sizeOptions.map((size) => (
+                      {values.sizeType && sizeOptions[values.sizeType].map(size => (
                         <option key={size} value={size}>{size}</option>
                       ))}
                     </Field>
-                    <ErrorMessage name="size" component="div" className="text-red-500 text-sm mt-1" />
                   </div>
 
-                  {/* Price Field */}
+                  {/* Price Range */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Price
-                    </label>
-                    <div className="relative">
-                      <span className="absolute left-3 top-2 text-gray-500">$</span>
-                      <Field
-                        name="price"
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        className="w-full pl-7 pr-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-green-500 focus:border-green-500"
-                        placeholder="0.00"
-                      />
+                    <label className="mb-1 block text-sm">Price</label>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">$0</span>
+                      <span className="text-sm text-gray-500">$100</span>
                     </div>
-                    <ErrorMessage name="price" component="div" className="text-red-500 text-sm mt-1" />
+                    <Field
+                      type="range"
+                      name="price"
+                      min="0"
+                      max="100"
+                      className="w-full"
+                    />
                   </div>
 
                   {/* Color Selection */}
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Color
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                      {colorOptions.map((color) => (
+                    <label className="mb-1 block text-sm">Color</label>
+                    <div className="relative">
+                      <div className="grid grid-cols-8 gap-2">
+                        {availableColors.map((color) => (
+                          <button
+                            key={color}
+                            type="button"
+                            className={`h-8 w-8 rounded-full ${
+                              values.color === color ? 'ring-2 ring-offset-2 ring-green-500' : ''
+                            }`}
+                            style={{ backgroundColor: color }}
+                            onClick={() => setFieldValue('color', color)}
+                          />
+                        ))}
                         <button
-                          key={color}
                           type="button"
-                          onClick={() => setFieldValue('color', color)}
-                          className={`w-10 h-10 rounded-full border-2 transition-all ${
-                            values.color === color
-                              ? 'border-green-500 ring-2 ring-green-200'
-                              : 'border-gray-300 hover:border-gray-400'
-                          }`}
-                          style={{ backgroundColor: color }}
-                          title={color}
-                        />
-                      ))}
-                    </div>
-                    <ErrorMessage name="color" component="div" className="text-red-500 text-sm mt-1" />
-                  </div>
-
-                  {/* Tags Field */}
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">
-                      Tags
-                    </label>
-                    <div className="flex flex-wrap gap-2">
-                      {tagOptions.map((tag) => (
-                        <button
-                          key={tag}
-                          type="button"
-                          onClick={() => {
-                            const newTags = values.tags.includes(tag)
-                              ? values.tags.filter(t => t !== tag)
-                              : [...values.tags, tag];
-                            setFieldValue('tags', newTags);
-                          }}
-                          className={`px-3 py-1 rounded-full text-sm transition-colors ${
-                            values.tags.includes(tag)
-                              ? 'bg-green-100 text-green-800 border-green-200'
-                              : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-                          }`}
+                          onClick={() => setShowColorPicker(true)}
+                          className="flex h-8 w-8 items-center justify-center rounded-full border border-dashed border-gray-300 hover:border-gray-400"
                         >
-                          {tag}
+                          <Plus className="h-4 w-4 text-gray-500" />
                         </button>
-                      ))}
+                      </div>
+
+                      {/* Color Picker Popover */}
+                      {showColorPicker && (
+                        <div className="absolute right-0 top-10 z-10 rounded-lg border bg-white p-4 shadow-lg">
+                          <div className="mb-4">
+                            <HexColorPicker color={pickerColor} onChange={setPickerColor} />
+                          </div>
+                          <div className="flex justify-between gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setShowColorPicker(false)}
+                              className="flex-1 rounded-md border px-3 py-1 text-sm hover:bg-gray-50"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              onClick={handleAddCustomColor}
+                              className="flex-1 rounded-md bg-green-600 px-3 py-1 text-sm text-white hover:bg-green-500"
+                            >
+                              Add Color
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
-                    <ErrorMessage name="tags" component="div" className="text-red-500 text-sm mt-1" />
                   </div>
 
-                  {/* Submit Button */}
-                  <div className="pt-4">
-                    <button
-                      type="submit"
-                      disabled={isSubmitting}
-                      className="w-full px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 disabled:opacity-50 transition-colors"
-                    >
-                      {isSubmitting 
-                        ? (isEditing ? 'Updating...' : 'Adding...') 
-                        : (isEditing ? 'Update Item' : 'Add Item')
-                      }
-                    </button>
+                  {/* Tags with Creatable Select */}
+                  <div>
+                    <label htmlFor="tags" className="mb-1 block text-sm">Tags</label>
+                    <CreatableSelect
+                      isMulti
+                      id="tags"
+                      name="tags"
+                      options={tagOptions}
+                      value={values.tags.map(tag => ({ value: tag, label: tag }))}
+                      onChange={(newValue) => {
+                        const tags = newValue.map(item => item.value);
+                        setFieldValue('tags', tags);
+                        // Add any new tags to options
+                        newValue.forEach(item => {
+                          if (!tagOptions.find(opt => opt.value === item.value)) {
+                            setTagOptions([...tagOptions, item]);
+                          }
+                        });
+                      }}
+                      styles={customStyles}
+                      placeholder="Select or create tags"
+                      formatCreateLabel={(inputValue) => `Create "${inputValue}"`}
+                    />
                   </div>
+
+                  <button
+                    type="submit"
+                    className="w-full rounded-lg bg-green-600 py-2 font-medium text-white hover:bg-green-500"
+                  >
+                    Submit
+                  </button>
                 </Form>
               )}
             </Formik>
